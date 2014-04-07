@@ -138,6 +138,10 @@ function bindMainControls() {
     startSerial();
   });
 
+  // Bind the external server connection button functionality
+  $('button.external').click(function(e){
+    //robopaint
+  });
 
   gui.Window.get().on('close', onClose); // Catch close event
 
