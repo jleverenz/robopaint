@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+    <script src="http://d2wy8f7a9ursnm.cloudfront.net/bugsnag-2.min.js" data-apikey="e3704afa045597498ab11c74f032f755"></script>
+    <script type="text/javascript" src="scripts/lib/jquery.js"></script>
+    <script type="text/javascript" src="scripts/lib/i18next.js"></script>
+    <script type="text/javascript" src="scripts/lib/socket.io.js"></script>
+    <script type="text/javascript" src="main.js"></script>
+    <script type="text/javascript" src="../node_modules/cncserver/example/cncserver.client.api.js"></script>
+    <script type="text/javascript" src="scripts/main.settings.js"></script>
+    <script type="text/javascript" src="scripts/main.api.js"></script>
+    <script type="text/javascript" src="scripts/robopaint.utils.js"></script>
+    <script type="text/javascript" src="scripts/lib/jquery.qtip.min.js"></script>
+
+    <link rel="stylesheet" href="styles.css">
+
+    <title>RoboPaint!</title>
+  </head>
+<body class="home">
+<div id="bar">
+  <img class="logo" src ="images/robopaint_logo.svg"/><span class="version">(v0.0.0)</span>
+  <span class="left">
+    <a id="bar-home" class="icon-home selected mode tipped" href="/" data-i18n="[title]nav.toolbar.home">&nbsp;</a>
+    <span class="separator">&nbsp;</span>
+    <a id="bar-load" class="icon-picture tipped" href="#" data-i18n="[title]nav.toolbar.open">&nbsp;</a>
+    <ul id="loadlist" style="display:none">
+      <li>No files. Add *.SVG to ./resources/svgs</li>
+    </ul>
+  </span>
+
+  <span class="right">
+    <a id="bar-remoteprint" class="modal tipped hidden icon-print" href="#" data-i18n="[title]nav.toolbar.remoteprint" title="Remote Paint: Enable Painting files from external programs">&nbsp;</a>
+    <a id="bar-help" data-i18n="[title]nav.toolbar.help" class="tipped" href="http://wiki.evilmadscientist.com/RoboPaint">?</a>
+    <a id="bar-settings" class="modal icon-cog-alt tipped" href="#" data-i18n="[title]nav.toolbar.settings">&nbsp;</a>
+  </span>
+</div>
+
+<div id="modalmask"></div>
+<div id="settings">Loaded via jQuery...</div>
+
+<div id="remoteprint-window" class="hidden print">
+  <h3 data-i18n>remoteprint.title</h3>
+  <!-- Silly grouped icon thing... -->
+  <div class="icons">
+    <span class="icon-cloud-thunder" data-i18n="[title]remoteprint.icontitle.from">&nbsp;</span>
+    <span class="icon-shuffle" data-i18n="[title]remoteprint.icontitle.through">&nbsp;</span>
+    <span class="icon-print" data-i18n="[title]remoteprint.icontitle.to">&nbsp;</span>
+  </div>
+
+  <div id="preview-scale-container">
+    <svg id="preview" xmlns="http://www.w3.org/2000/svg" version="1.1" height="864" width="1152">
+      <g id="cncserversvg" transform="translate(48,48)"></g>
+    </svg>
+    <fieldset id="details">
+      <legend data-i18n>remoteprint.details.title</legend>
+      <button disabled="disabled" id="pause" data-i18n>common.pause</button>
+      <div id="statusmessage"></div>
+      <progress title="Current progress" max="100" value="0"></progress>
+      <button class="normal cancel" data-i18n="[title]remoteprint.details.exit.title;remoteprint.details.exit.text">remoteprint.details.exit.text</button>
+    </fieldset>
+  </div>
+
+</div>
+
+<img id="loader" src="images/loading_spinner.svg"/>
+
+<img id="logo" src="images/watercolorbot_icon.png"/>
+
+<h1 class="loading">
+  <b data-i18n>status.start</b>
+  <div class="options hidden">
+    <span data-i18n>status.question</span>
+    <div>
+      <button class="continue normal" data-i18n>status.button.continue</button>
+      <button class="reconnect normal" data-i18n>status.button.retry</button>
+      <button class="external normal">Connect to Server</button>
+      <div class="external hidden">
+        <h4>Enter the CNC server address and port to connect to:</h4>
+        <div>
+          <input type="text">
+          <input type="number">
+        </div>
+        <aside>Status: <em>Waiting...</em></aside>
+      </div>
+    </div>
+  </div>
+</h1>
+<nav class="hidden"></nav>
+
+<script type="text/javascript">
+  translatePage();
+</script>
+
+</body>
+</html>
+

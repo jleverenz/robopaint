@@ -1,8 +1,9 @@
 /**
  * @file Holds all Robopaint watercolorbot specific configuration and utility
- * functions.
+ * functions in AMD Module format for inclusion via RequireJS.
  */
 
+define(function(){return function($, robopaint, cncserver){
 cncserver.wcb = {
   // Set the current status message
   status: function(msg, st) {
@@ -36,7 +37,7 @@ cncserver.wcb = {
   },
 
   // Grouping function to do a full wash of the brush
-  fullWash: function(callback, useDip) {
+  fullWash: function(callback, useDip, fromSendBuffer) {
     var toolExt = useDip ? 'dip' : '';
 
     switch(parseInt(robopaint.settings.penmode)) {
@@ -46,17 +47,30 @@ cncserver.wcb = {
         if (callback) callback(true);
         break;
       default:
-        cncserver.wcb.status('Doing a full brush wash...');
-        robopaint.cncserver.api.tools.change('water0' + toolExt, function(){
-          robopaint.cncserver.api.tools.change('water1' + toolExt, function(){
-            robopaint.cncserver.api.tools.change('water2' + toolExt, function(d){
-              robopaint.cncserver.api.pen.resetCounter();
-              cncserver.state.media = 'water0';
-              cncserver.wcb.status(['Brush should be clean'], d);
-              if (callback) callback(d);
-            });
-          });
-        });
+        cncserver.cmd.run([
+          ['status', 'Doing a full brush wash...'],
+          'resetdistance',
+          ['tool', 'water0' + toolExt],
+          ['tool', 'water1' + toolExt],
+          ['tool', 'water2' + toolExt],
+          ['status', 'Brush should be clean'],
+        ], fromSendBuffer);
+        /**
+         * The 'fromSendBuffer' at the end here will run this set of commands
+         * into the TOP of the send buffer IF the fullwash command came from a
+         * run command, because otherwise these new run commands might be added
+         * to the bottom AFTER some other commands. This in effect simply
+         * replaces the one "wash" command with the 6 commands above :)
+         *
+         * We use the passed variable "fromSendBuffer", so that implementors can
+         * still call the function directly and have the immediate effect of
+         * simply adding these commands to the sendBuffer.
+         */
+
+        if (callback) callback(true);
+
+        // TODO: Hmm... this should probably be set via stream update :/
+        cncserver.state.media = 'water0';
     }
   },
 
@@ -72,7 +86,7 @@ cncserver.wcb = {
   },
 
   // Wrapper for toolchange to manage pen mode logic
-  setMedia: function(toolName, callback){
+  setMedia: function(toolName, callback, fromSendBuffer){
     var name = cncserver.wcb.getMediaName(toolName).toLowerCase();
     var mode = parseInt(robopaint.settings.penmode);
 
@@ -105,21 +119,23 @@ cncserver.wcb = {
     $('nav#tools a.selected').removeClass('selected');
     $('nav#tools #' + idName).addClass('selected');
 
-    cncserver.wcb.status('Putting some ' + name + ' on the brush...');
-    robopaint.cncserver.api.tools.change(toolName, function(d){
-      cncserver.wcb.status(['There is now ' + name + ' on the brush'], d);
-      robopaint.cncserver.api.pen.resetCounter();
-      if (callback) callback(d);
-    });
+    cncserver.cmd.run([
+      ['status', 'Putting some ' + name + ' on the brush...'],
+      'resetdistance',
+      ['tool', toolName],
+      ['status', 'There is now ' + name + ' on the brush']
+    ], fromSendBuffer);
 
+    if (callback) callback();
   },
 
   // Convert a screen coord to one in the correct format for the API
   getPercentCoord: function(point) {
     return {
-      // Remove 1/2in (96dpi / 2) from total width for right/bottom offset
-      x: (point.x / (cncserver.canvas.width - 48)) * 100,
-      y: (point.y / (cncserver.canvas.height - 48)) * 100
+      // Remove 1in (96dpi) from total width for WCB margin offsets
+      // TODO: Base this off BOT specific margin setting
+      x: (point.x / (cncserver.canvas.width - 96)) * 100,
+      y: (point.y / (cncserver.canvas.height - 96)) * 100
     };
   },
 
@@ -129,6 +145,25 @@ cncserver.wcb = {
       // Remove 1/2in (96dpi / 2) from total width for right/bottom offset
       x: (point.x / 100) * (cncserver.canvas.width - 48) ,
       y: (point.y / 100) * (cncserver.canvas.height - 48)
+    };
+  },
+
+  // Convert an absolute steps to a draw coordinate
+  getStepstoAbsCoord: function(point) {
+    var bot = robopaint.currentBot.data;
+
+    // Only work with the WorkArea (coord is absolute in max area)
+    var x = (point.x - robopaint.currentBot.data.workArea.left);
+    var y = (point.y - robopaint.currentBot.data.workArea.top);
+
+    // Remove 1/2in (96dpi / 2) from total width for right/bottom offset
+    var xscale = (cncserver.canvas.width - 48*2) / (bot.maxArea.width - bot.workArea.left);
+    var yscale = (cncserver.canvas.height - 48*2) / (bot.maxArea.height - bot.workArea.top);
+
+    return {
+      // Add back minimum 1/2in (96dpi / 2) from total width for right/bottom offset
+      x: parseInt(x * xscale) + 48,
+      y: parseInt(y * yscale) + 48,
     };
   },
 
@@ -143,49 +178,49 @@ cncserver.wcb = {
     // Change what happens here depending on penmode
     switch(parseInt(robopaint.settings.penmode)) {
       case 1: // Dissallow paint
-        cncserver.wcb.status('Going to get some more water...')
-        robopaint.cncserver.api.tools.change("water0", function(d){
-          robopaint.cncserver.api.pen.up(function(d){
-            robopaint.cncserver.api.pen.move(cncserver.wcb.getPercentCoord(point), function(d) {
-              cncserver.wcb.status(['Continuing to paint with water']);
-                robopaint.cncserver.api.pen.down(function(d){
-                  if (callback) callback(d);
-                })
-            });
-          });
-        });
+        cncserver.cmd.run([
+          ['status', 'Going to get some more water...'],
+          'resetdistance',
+          ['media', 'water0'],
+          'up',
+          ['move', point],
+          ['status', 'Continuing to paint with water'],
+          'down'
+        ], true); // Add to the start (not the end) of the local buffer
+        if (callback) callback();
+
         break;
       case 2: // Dissallow water
-        cncserver.wcb.status('Going to get some more ' + name + ', no water...')
-        robopaint.cncserver.api.tools.change(cncserver.state.mediaTarget, function(d){
-          robopaint.cncserver.api.pen.up(function(d){
-            robopaint.cncserver.api.pen.move(cncserver.wcb.getPercentCoord(point), function(d) {
-              cncserver.wcb.status(['Continuing to paint with ' + name]);
-                robopaint.cncserver.api.pen.down(function(d){
-                  if (callback) callback(d);
-                })
-            });
-          });
-        });
+        cncserver.cmd.run([
+          ['status', 'Going to get some more ' + name + ', no water...'],
+          'resetdistance',
+          ['media', cncserver.state.mediaTarget],
+          'up',
+          ['move', point],
+          ['status', 'Continuing to paint with ' + name],
+          'down'
+        ], true); // Add to the start (not the end) of the local buffer
+
+        if (callback) callback();
+
         break;
       case 3: // Dissallow All
         // Get paint ignored for draw mode 3
         if (callback) callback(true);
         break;
       default:
-        cncserver.wcb.status('Going to get some more ' + name + '...')
-        robopaint.cncserver.api.tools.change('water0dip', function(d){
-          robopaint.cncserver.api.tools.change(cncserver.state.mediaTarget, function(d){
-            robopaint.cncserver.api.pen.up(function(d){
-              robopaint.cncserver.api.pen.move(cncserver.wcb.getPercentCoord(point), function(d) {
-                cncserver.wcb.status(['Continuing to paint with ' + name]);
-                  robopaint.cncserver.api.pen.down(function(d){
-                    if (callback) callback(d);
-                  })
-              });
-            });
-          });
-        });
+        cncserver.cmd.run([
+          ['status', 'Going to get some more ' + name + '...'],
+          'resetdistance',
+          ['media', 'water0dip'],
+          ['media', cncserver.state.mediaTarget],
+          'up',
+          ['move', point],
+          ['status', 'Continuing to paint with ' + name],
+          'down'
+        ], true); // Add to the start (not the end) of the local buffer
+
+        if (callback) callback();
     }
   },
 
@@ -211,7 +246,7 @@ cncserver.wcb = {
 
   // Move through all paths in a given context, pull out all jobs and begin to
   // Push them into the buffer
-  autoPaint: function(context, callback, completeCallback) {
+  autoPaint: function(context, callback) {
      // Clear all selections
     $('path.selected', context).removeClass('selected');
 
@@ -292,7 +327,6 @@ cncserver.wcb = {
       }
     });
 
-
     cncserver.wcb.status('Auto Paint: ' +
       $('path', context).length + ' paths, ' +
       finalJobs.length + ' jobs');
@@ -312,36 +346,45 @@ cncserver.wcb = {
       if (job) {
         // Make sure the color matches, full wash and switch colors!
         if (runColor != job.c) {
-          run(['wash', ['tool', job.c]]);
+          run(['wash', ['media', job.c]]);
           runColor = job.c;
+          cncserver.cmd.sendComplete(readyStartJob);
+        } else {
+          readyStartJob();
         }
 
-        robopaint.utils.addShortcuts(job.p);
+        function readyStartJob() {
+          // Clear all selections at start
+          $('path.selected', context).removeClass('selected');
+          robopaint.utils.addShortcuts(job.p);
 
-        // Clear all selections at start
-        $('path.selected', context).removeClass('selected');
+          if (job.t == 'stroke'){
+            job.p.addClass('selected');
+            run('status', 'Drawing path ' + job.p[0].id + ' stroke...');
+            cncserver.paths.runOutline(job.p, function(){
+              jobIndex++;
+              job.p.removeClass('selected'); // Deselect now that we're done
+              cncserver.cmd.sendComplete(doNextJob);
+            })
+          } else if (job.t == 'fill') {
+            run('status', 'Drawing path ' + job.p[0].id + ' fill...');
 
-        if (job.t == 'stroke'){
-          job.p.addClass('selected');
-          run([['status', 'Drawing path ' + job.p[0].id + ' stroke...']]);
-          cncserver.paths.runOutline(job.p, function(){
-            jobIndex++;
-            job.p.removeClass('selected'); // Deselect now that we're done
-            doNextJob();
-          })
-        } else if (job.t == 'fill') {
-          run([['status', 'Drawing path ' + job.p[0].id + ' fill...']]);
-
-          function fillCallback(){
-            jobIndex++;
-            doNextJob();
+            cncserver.paths.runFill(job.p, function(){
+              jobIndex++;
+              cncserver.cmd.sendComplete(doNextJob);
+            });
           }
-
-          cncserver.paths.runFill(job.p, fillCallback);
         }
       } else {
+        run('wash');
+        cncserver.cmd.sendComplete(function(){
+          run([
+            'park',
+            ['status', 'AutoPaint Complete!'],
+            ['callbackname', 'autopaintcomplete']
+          ]);
+        });
         if (callback) callback();
-        run(['wash','park', ['status', 'AutoPaint Complete!'], ['custom', completeCallback]]);
         // Done!
       }
     }
@@ -411,3 +454,4 @@ cncserver.wcb = {
     }
   }
 };
+}});

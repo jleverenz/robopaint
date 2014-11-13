@@ -8,18 +8,43 @@
 global.$ = $;
 var gui = require('nw.gui');
 
+
+// Setup and hide extraneous menu items for Mac Menu
+if (process.platform === "darwin") {
+  var mb = new gui.Menu({type: 'menubar'});
+  mb.createMacBuiltin('RoboPaint', {
+    hideEdit: true,
+    hideWindow: true
+  });
+  gui.Window.get().menu = mb;
+}
+
+// BugSnag NODE Initialization
+//
+// TODO: This needs lots more testing, near as I can tell, for node, this is
+// just dandy, but here in node-webkit, it simply throws the app on its ass
+// leaving the user wondering what the hell happened, and nothing to show for
+// it. Yes, we do get a report in the management system, but it's not nice to
+// people. Need to configure this to fail less deadly, or rely solely on the
+// clientside plugin :/
+/*var bugsnag = require("bugsnag");
+bugsnag.register("e3704afa045597498ab11c74f032f755",{
+  releaseStage: gui.App.manifest.stage,
+  appVersion: gui.App.manifest.version
+});*/
+
+
 // Global Keypress catch for debug
 $(document).keypress(function(e){
-  console.log(e);
   if (e.keyCode == 4 && e.ctrlKey && e.shiftKey){
     gui.Window.get().showDevTools();
   }
 });
 
 
+var currentLang = "";
 var fs = require('fs');
 var cncserver = require('cncserver');
-
 var barHeight = 40;
 var isModal = false;
 var initializing = false;
@@ -38,7 +63,10 @@ var robopaint = {
 };
 
 // Option buttons for connections
-// TODO: Redo this is a message management window system!!!
+// TODO: Redo this is as a message management window system.
+// Needs approximately same look, obvious, modal, sub-buttons. jQuery UI may
+// not be quite enough. Requires some research (and good understanding of
+// what this is currently used for, and what/if the other modes may make use of it).
 var $options;
 var $stat;
 
@@ -53,9 +81,10 @@ $(function() {
   $(window).resize(responsiveResize);
   responsiveResize();
 
-  // Set visible version from manifest (with appended bot type if not WCB)
-  var bt = robopaint.currentBot.type != "watercolorbot" ? ' - ' + robopaint.currentBot.name : '';
-  $('span.version').text('(v' + gui.App.manifest.version + ')' + bt);
+
+
+  // Load the modes (adds to settings content)
+  loadAllModes();
 
   // Bind settings controls & Load up initial settings!
   // @see scripts/main.settings.js
@@ -77,9 +106,6 @@ $(function() {
 
   // Load the quickload list
   initQuickload();
-
-  // Bind the tooltips
-  initToolTips();
 
   // Add the secondary page iFrame to the page
   $subwindow = $('<iframe>').attr({
@@ -103,8 +129,8 @@ $(function() {
   bindMainControls(); // Bind all the controls for the main interface
  } catch(e) {
    $('body.home h1').attr('class', 'error').text('Error During Initialization:')
-     .append($('<span>').addClass('message').text(e.message));
-   console.log(e);
+     .append($('<span>').addClass('message').html("<pre>" + e.message + "\n\n" + e.stack + "</pre>"));
+   console.error(e.stack);
  }
 })
 
@@ -122,6 +148,10 @@ function bindMainControls() {
       // Initialize settings...
       loadSettings();
       saveSettings();
+
+      // Init sockets for data stream
+      initSocketIO();
+
       $('body.home nav').fadeIn('slow');
       initializing = false;
     }
@@ -282,24 +312,34 @@ function responsiveResize() {
 };
 
 /**
+ * Initialize the Socket.IO websocket connection
+ */
+function initSocketIO(){
+  // Add Socket.IO include now that we know where from and the server is running
+  var path = robopaint.cncserver.api.server.protocol +
+    '://' + robopaint.cncserver.api.server.domain + ':' +
+    robopaint.cncserver.api.server.port;
+  robopaint.socket = io(path);
+}
+
+/**
  * Binds all the callbacks functions for controlling CNC Server via its Node API
  */
 function startSerial(){
-  setMessage('Starting up...', 'loading');
+  setMessage(robopaint.t('status.start'), 'loading');
 
   try {
     cncserver.start({
       botType: robopaint.currentBot.type,
       success: function() {
-        setMessage('Port found, connecting...');
+        setMessage(robopaint.t('status.found'));
       },
       error: function(err) {
-        setMessage('Couldn\'t connect! - ' + err, 'warning');
+        setMessage(robopaint.t('status.error') + ' - ' + err, 'warning');
         $options.slideDown('slow');
       },
       connect: function() {
-        setMessage('Connected!', 'success');
-
+        setMessage(robopaint.t('status.success'), 'success');
         $stat.fadeOut('slow');
         setModal(false);
 
@@ -314,18 +354,21 @@ function startSerial(){
         saveSettings();
 
         robopaint.api.bindCreateEndpoints();
+
+        // Init sockets for data stream
+        initSocketIO();
       },
       disconnect: function() {
         setModal(true);
         $stat.show();
-        setMessage('Bot Disconnected!', 'error');
+        setMessage(robopaint.t('status.disconnect'), 'error');
         $options.slideDown();
       }
     });
   } catch(e) {
    $('body.home h1').attr('class', 'error').text('Error During Serial Start:')
-     .append($('<span>').addClass('message').text(e.message));
-   console.log(e);
+     .append($('<span>').addClass('message').html("<pre>" + e.message + "\n\n" + e.stack + "</pre>"));
+   console.log(e.stack);
  }
 }
 
@@ -369,6 +412,11 @@ function checkModeClose(callback, isGlobal, destination) {
  * Initialize the toolTip configuration and binding
  */
 function initToolTips() {
+  // Check if this is not the first time initToolTips is running
+  if ($('#bar a.tipped:first').data("tipped")) {
+    // Destroy existing ToolTips before recreating them
+    $('#bar a.tipped, nav a').qtip("destroy");
+  };
 
   $('#bar a.tipped, nav a').qtip({
     style: {
@@ -397,7 +445,7 @@ function initToolTips() {
     }
   }).click(function(){
     $(this).qtip("hide");
-  });
+  }).data("tipped", true);
 
   function beforeQtip(){
     // Move position to be more centered for outer elements
@@ -420,6 +468,11 @@ function initQuickload() {
   var paths = ['resources/svgs'];
 
   // TODO: Support user directories off executable
+  // This is imagined as secondary dropdown folder to list SVG files from a
+  // "RoboPaint" directory in the user's operating system documents or pictures
+  // folder, allowing for easy customizing of their quickload images. (This
+  // could also be a good default location to save files to!). How do we get
+  // that folder? No idea.
   var svgs = fs.readdirSync(paths[0]);
 
   // Bind Quick Load Hover
@@ -481,7 +534,7 @@ function fadeInWindow() {
 
 
 /**
- * Fetches all watercolor sets available from the colorsets dir
+ * Fetches all colorsets available from the colorsets dir
  */
 function getColorsets() {
   var colorsetDir = 'resources/colorsets/';
@@ -495,47 +548,174 @@ function getColorsets() {
     }
   }
 
-  robopaint.statedata.colorsets = {'ALL': sets};
+  robopaint.statedata.colorsets = {};
 
-  $.each(sets, function(i, set){
+  // Move through each colorset JSON definition file...
+  for(var i in sets) {
+    var set = sets[i];
     var setDir = colorsetDir + set + '/';
-    var c = JSON.parse(fs.readFileSync(setDir + set + '.json'));
-
-    $('#colorset').append(
-      $('<option>')
-        .attr('value', set)
-        .text(c.name)
-        .prop('selected', set == robopaint.settings.colorset)
-    );
-
-    // Add pure white to the end of the color set for auto-color
-    c.colors.push({'White': '#FFFFFF'});
-
-    // Process Colors to avoid re-processing later
-    var colorsOut = [];
-    for (var i in c.colors){
-      var name = Object.keys(c.colors[i])[0];
-      var h = c.colors[i][name];
-      var r = robopaint.utils.colorStringToArray(h);
-      colorsOut.push({
-        name: name,
-        color: {
-          HEX: h,
-          RGB: r,
-          HSL: robopaint.utils.rgbToHSL(r),
-          YUV: robopaint.utils.rgbToYUV(r)
-        }
-      });
+    try {
+      var fileSets = JSON.parse(fs.readFileSync(setDir + set + '.json'));
+    } catch(e) {
+      // Silently fail on bad parse!
+      continue;
     }
 
-    robopaint.statedata.colorsets[set] = {
-      name: c.name,
-      baseClass: c.styles.baseClass,
-      colors: colorsOut,
-      stylesheet: $('<link>').attr({rel: 'stylesheet', href: setDir + c.styles.src})
-    };
+    // Move through all colorsets in file
+    for(var s in fileSets) {
+      var c = fileSets[s];
+
+      try {
+        // Add pure white to the end of the color set for auto-color
+        c.colors.push({'White': '#FFFFFF'});
+
+        // Process Colors to avoid re-processing later
+        var colorsOut = [];
+        for (var i in c.colors){
+          var name = Object.keys(c.colors[i])[0];
+          var h = c.colors[i][name];
+          var r = robopaint.utils.colorStringToArray(h);
+          colorsOut.push({
+            name: name,
+            color: {
+              HEX: h,
+              RGB: r,
+              HSL: robopaint.utils.rgbToHSL(r),
+              YUV: robopaint.utils.rgbToYUV(r)
+            }
+          });
+        }
+      } catch(e) {
+        // Silently fail on bad parse!
+        continue;
+      }
+
+      robopaint.statedata.colorsets[c.styles.baseClass] = {
+        name: c.name,
+        type: c.type,
+        weight: parseInt(c.weight),
+        description: c.description,
+        media: c.media,
+        baseClass: c.styles.baseClass,
+        colors: colorsOut,
+        stylesheet: $('<link>').attr({rel: 'stylesheet', href: setDir + c.styles.src}),
+        styleSrc: setDir + c.styles.src
+      };
+    }
+  }
+
+
+  var order = Object.keys(robopaint.statedata.colorsets).sort(function(a, b) {
+    return (robopaint.statedata.colorsets[a].weight - robopaint.statedata.colorsets[b].weight)
   });
+
+  // Actually add the colorsets in the correct weighted order to the dropdown
+  for(var i in order) {
+    var c = robopaint.statedata.colorsets[order[i]];
+    $('#colorset').append(
+      $('<option>')
+        .attr('value', order[i])
+        .text(c.type + ' - ' + c.name)
+        .prop('selected', order[i] == robopaint.settings.colorset)
+    );
+  }
+
+  // Menu separator
+  $('#colorset').append($('<optgroup>').attr('label', ' ').addClass('sep'));
+
+  // TODO: Append "in memory" custom sets here
+  // These are new custom colorsets created by the new feature (not yet
+  // completed), saved in new localStorage variable to avoid tainting settings.
+
+  // Add "Create new" item
+  $('#colorset').append(
+    $('<option>')
+      .attr('value', '_new')
+      .text(robopaint.t('settings.output.colorsets.add'))
+      .addClass('add')
+  );
+
+  // Initial run to populate settings window
+  updateColorSetSettings();
 }
+
+/**
+ * Load all modes within the application
+ */
+function loadAllModes(){
+  var modesDir = 'resources/modes/';
+  var files = fs.readdirSync(modesDir);
+  var modes = [];
+  var modeDirs = [];
+
+  // List all files, only add directories
+  for(var i in files) {
+    if (fs.statSync(modesDir + files[i]).isDirectory()) {
+      modeDirs.push(files[i]);
+    }
+  }
+
+  // Move through each mode package JSON file...
+  for(var i in modeDirs) {
+    var modeDir = modesDir + modeDirs[i] + '/';
+    var package = {};
+
+    try {
+      package = JSON.parse(fs.readFileSync(modeDir + 'package.json'));
+    } catch(e) {
+      // Silently fail on bad parse!
+      continue;
+    }
+
+    // This a good file? if so, lets make it ala mode!
+    if (package.type == "robopaint_mode" && package.main !== '') {
+      // TODO: Add FS checks to see if its main file actually exists
+      package.main = 'modes/' + modeDirs[i] + '/' + package.main;
+      modes.push(package);
+    }
+  }
+
+  // Calculate correct order for modes based on package weight (reverse)
+  var order = Object.keys(modes).sort(function(a, b) {
+    return (modes[b].weight - modes[a].weight)
+  });
+
+  // Move through all approved modes based on mode weight and add DOM
+  for(var i in order) {
+    var m = modes[order[i]];
+    // Add the nav bubble
+    $('nav').prepend(
+      $('<a>')
+        .attr('href', m.main)
+        .attr('id', m.name)
+        .attr('title', m.description)
+        .addClass((m.core ? '' : ' hidden'))
+        .text(m.word)
+    );
+
+    // Add the toolbar link icon
+    $('#bar-home').after(
+      $('<a>')
+        .attr('href', m.main)
+        .attr('id', 'bar-' + m.name)
+         // TODO: Add support for better icons
+        .addClass('mode tipped ' + m.icon + (m.core ? '' : ' hidden') )
+        .attr('title', m.description)
+        .html('&nbsp;')
+    );
+
+    // Add the non-core settings checkbox for enabling
+    if (!m.core) {
+      $('fieldset.advanced-modes aside:first').after($('<div>').append(
+        $('<label>').attr('for', m.name + 'modeenable').text(m.title),
+        $('<input>').attr({type: 'checkbox', id: m.name + 'modeenable'}),
+        $('<aside>').text(m.detail)
+      ));
+    }
+  }
+
+}
+
 
 /**
  * Set modal message
@@ -587,4 +767,107 @@ function getCurrentBot() {
     // Parse error.. will stick with default
   }
   return bot;
+}
+
+/**
+ * Early called translate trigger for loading translations and static
+ * strings.
+ */
+function translatePage() {
+  // Shoehorn settings HTML into page first...
+  // Node Blocking load to get the settings HTML content in
+  $('#settings').html(fs.readFileSync('resources/main.settings.inc.html').toString());
+  var resources = {};
+
+  // Get all available language JSON files from folders, add to the dropdown
+  // list, and add to the rescources available.
+  var i = 0;
+  var i18nPath = 'resources/i18n/';
+  fs.readdirSync(i18nPath).forEach(function(file) {
+    // Get contents of the language file.
+    try {
+      var data = JSON.parse(fs.readFileSync(i18nPath + file , 'utf8'));
+
+      // Create new option in the pulldown language list, with the text being
+      // the language's name value is the two letter language code.
+      $("#lang").append(
+        $("<option>")
+          .text(data.settings.lang.name)
+          .attr('value', data['_meta'].target)
+      );
+
+
+      // Add the language to the resource list.
+      resources[data['_meta'].target] = { translation: data};
+      i += 1;
+    } catch(e) {
+      console.error('Bad language file:' + file, e);
+    }
+  });
+  console.debug("Found a total of " + i + " language files.");
+
+  // Loop over every element in the current document scope that has a 'data-i18n' attribute that's empty
+  $('[data-i18n]=""').each(function() {
+    // "this" in every $.each() function, is a reference to each selected DOM object from the query.
+    // Note we have to use $() on it to get a jQuery object for it. Do that only once and save it in a var
+    // to keep your code from having to instantiate it more than once.
+    var $node = $(this);
+    // Check if the text contains a dot (will prevent it from accidentally
+    // overwriitng existing data in i18n attribute) and if the existing
+    // i18n attribute is empty
+    if ($node.text().indexOf('.') > -1 && $node.attr('data-i18n') == "") {
+      $node.attr('data-i18n', $node.text());
+      // This leaves the text value of the node intact just in case it doesn't translate and someone is debugging,
+      // they'll be able to see the exact translation key that is a problem in the UI.
+    }
+  });
+
+  i18n.init({
+    resStore: resources,
+    ns: 'translation'
+  }, function(t) {
+    robopaint.t = t;
+    $('[data-i18n]').i18n();
+  });
+}
+
+/**
+ * Reloads language file and updates any changes to it.
+ * Called when the language is changed in the menu list.
+ */
+
+function updateLang() {
+  // Get the index pointer from the dropdown menu.
+  robopaint.settings.lang = $('#lang').val();
+
+  // Abort the subroutine if the language has not changed (or on first load)
+  if (currentLang == robopaint.settings.lang) {
+      return;
+  }
+
+  currentLang = robopaint.settings.lang;
+
+  // Change the language on i18n, and reload the translation variable.
+  i18n.setLng(
+    robopaint.settings.lang,
+    function(t) {
+      robopaint.t = t;
+      $('[data-i18n]').i18n();
+
+      // Set visible version from manifest (with appended bot type if not WCB)
+      // This has to be done here because it's one of the few out of phase translations
+      var bt = robopaint.currentBot.type != "watercolorbot" ? ' - ' + robopaint.currentBot.name : '';
+      $('span.version').text('('+ robopaint.t('nav.toolbar.version') + gui.App.manifest.version + ')' + bt);
+    });
+
+  // Initalize/reset Tooltips
+  initToolTips();
+
+  // Report language switch to the console
+  console.info("Language Switched to: " + robopaint.settings.lang);
+  
+  // Apply bolding to details text
+  $('aside').each(function(){
+    $(this).html($(this).text().replace(/\*\*(\S(.*?\S)?)\*\*/gm, '<b>$1</b>'));
+  });
 }

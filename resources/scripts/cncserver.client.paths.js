@@ -2,10 +2,15 @@
  * @file Holds all CNC Server path management and tracing functions
  */
 
+define(function(){return function($, robopaint, cncserver){
 cncserver.paths = {
   // Find out what DOM object is directly below the point given
   // Will NOT work if point is outside visible screen range!
+
   // TODO: maybe this can be replaced by polygonal collision detection? :P
+  // Wait, no, on second thought this is a terrible idea. We should just
+  // boolean difference all the paths into each other!
+  // https://github.com/Delapouite/JsClipper
   getPointPathCollide: function(point) {
 
     // Add 48 to each side for 96dpi 1/2in offset
@@ -43,8 +48,9 @@ cncserver.paths = {
       var path = document.createElementNS(svgNS, 'path');
 
       $(path).attr({
-        fill: $elem.attr('fill'),
-        stroke: $elem.attr('stroke'),
+        fill: $elem.attr('fill') == 'rgba(0, 0, 0, 0)' ? 'none' : $elem.attr('fill'),
+        stroke: $elem.attr('stroke') == 'rgba(0, 0, 0, 0)' ? 'none' : $elem.attr('stroke'),
+        'stroke-width': parseInt($elem.attr('stroke-width')) == 0 ? 10 : parseInt($elem.attr('stroke-width')),
         id: $elem.attr('id')
       })[0];
 
@@ -142,6 +148,64 @@ cncserver.paths = {
     });
   },
 
+ /**
+   *  Helper function to run the outline of a linear path into the buffer.
+   *  Takes over path running when occlusions aren't an issue and the path
+   *  only contains M and L type segments.
+   *
+   *  @param {SVGpath object} path
+   *    DOM object for the path
+   *  @returns {boolean}
+   *    True on success, false on failure
+   */
+  _runLinearOutline: function(path) {
+    if (!robopaint.utils.pathIsLinear(path)) return false;
+    var run = cncserver.cmd.run;
+    var lastPoint = {x: 0, y: 0};
+
+    if (!path.transformMatrix) {
+      path.transformMatrix = path.getTransformToElement(path.ownerSVGElement);
+      path.transPoint = function(point){ // Handy helper function for gPAL
+        var svgPoint = this.ownerSVGElement.createSVGPoint();
+        svgPoint.x = point.x; svgPoint.y = point.y;
+        svgPoint = svgPoint.matrixTransform(this.transformMatrix);
+        return {x: svgPoint.x + 48, y: svgPoint.y + 48};
+      };
+    }
+
+    // Move through each segment
+    for (var i = 0; i < path.pathSegList.numberOfItems; i++) {
+      var seg = path.pathSegList.getItem(i);
+      var letter = seg.pathSegTypeAsLetter;
+
+      var point = {x: seg.x, y: seg.y};
+
+      if (letter == 'm' || letter == 'l') { // Relative point offset (convert to ABS)
+        point.x = lastPoint.x + point.x;
+        point.y = lastPoint.y + point.y;
+        letter = letter.toUpperCase(); // We're all friends now :)
+      }
+
+      lastPoint.x = point.x; lastPoint.y = point.y;
+
+      point = path.transPoint(point);
+
+      // TODO: Add overshoot at end movements
+      // Code can probably be copied from runOutline below using lastPoint, etc
+      if (letter == 'M') { // Move to pos
+        run('up');
+        run('move', {x: point.x, y: point.y});
+        run('down');
+
+      } else if (letter == 'L' || letter == 'l') { // Draw Line
+        run('move', {x: point.x, y: point.y});
+      }
+
+    }
+
+    return true;
+  },
+
   /**
    *  Run a the outline of a given path into the buffer
    *
@@ -165,6 +229,16 @@ cncserver.paths = {
 
     // Start with brush up
     run('up');
+
+    // If we don't care about occlusions, and it's linear, run it the "easy" way!
+    if (cncserver.config.checkVisibility === false && robopaint.utils.pathIsLinear($path[0])) {
+      if (cncserver.paths._runLinearOutline($path[0])) {
+        run('up');
+        console.info($path[0].id + ' linear path outline run done!');
+        if (callback) callback();
+        return;
+      }
+    }
 
     // We can think of the very first brush down as waiting till we should paint
     cncserver.state.process.waiting = true;
@@ -212,10 +286,12 @@ cncserver.paths = {
                 var seg = $path[0].pathSegList.getItem(checkSeg);
                 if (seg.pathSegTypeAsLetter.toLowerCase() === "m") {
                   subPathCount++;
-                  run('status', 'Drawing subpath #' + subPathCount);
-                  run('up');
-                  run('move', p);
-                  run('down');
+                  run([
+                    ['status', 'Drawing subpath #' + subPathCount],
+                    'up',
+                    ['move', p],
+                    'down'
+                  ]);
                   break;
                 }
               }
@@ -230,9 +306,12 @@ cncserver.paths = {
             run('move', p);
           }
 
-          // If we were waiting, pen goes down
+          // If we were waiting, move to point then pen goes down
           if (cncserver.state.process.waiting) {
-            run('down');
+            run([
+              ['move', p],
+              'down'
+            ]);
             cncserver.state.process.waiting = false;
           }
         } else { // Path is invisible, lift the brush if we're not already waiting
@@ -758,3 +837,4 @@ cncserver.paths = {
 
   }
 };
+}});

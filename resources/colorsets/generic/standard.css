@@ -1,0 +1,32 @@
+.generic-standard #color0 {
+  background-color: black; /* Black */
+}
+
+.generic-standard #color1 {
+  background-color: red; /* Red */
+}
+
+.generic-standard #color2 {
+  background-color: orange; /* Orange */
+}
+
+#colors.generic-standard #color3 {
+  background-color: yellow; /* Yellow */
+  color: black;
+}
+
+.generic-standard #color4 {
+  background-color: green; /* Green */
+}
+
+.generic-standard #color5 {
+  background-color: blue; /* Blue */
+}
+
+.generic-standard #color6 {
+  background-color: purple; /* Violet */
+}
+
+.generic-standard #color7 {
+  background-color: SaddleBrown; /* Brown */
+}

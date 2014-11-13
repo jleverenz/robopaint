@@ -33,20 +33,26 @@ function loadSettings() {
     // Robopaint specific defaults
     filltype: 'line-straight',
     fillangle: 0,
-    penmode: robopaint.currentBot.type == "watercolorbot" ? 0 : 3, // TODO: Pull this from toolset
+    penmode: robopaint.currentBot.type == "watercolorbot" ? 0 : 3, // TODO: Pull this from toolset *(see note below)
     openlast: 0,
     showcolortext: 0,
-    colorset: 'crayola_classic',
+    colorset: 'generic-standard',
     maxpaintdistance: 8040,
     fillspacing: 10,
     fillprecision: 14,
     strokeovershoot: 5,
     tsprunnertype: 'OPT',
     strokeprecision: 6,
-    manualpaintenable: 0,
+    enabledmodes: {},
     remoteprint: 0,
-    gapconnect: 1
+    gapconnect: 1,
+    lang: '' // String storing the two digit code for the language.
   };
+
+  // * We can't assume that anything that isn't a WaterColorBot doesn't have
+  // colors. We should add some kind of logic that checks to see if they have
+  // the known standard toolset for colors (color0-7), then allow them to have
+  // access to modes other than pen.
 
   // Are there existing settings from a previous run? Mesh them into the defaults
   if (localStorage[settingsStorageKey()]) {
@@ -62,6 +68,13 @@ function loadSettings() {
   for (var key in robopaint.settings) {
     var $input = $('#' + key);
     switch (key) {
+      case 'enabledmodes':
+        for (var i in robopaint.settings.enabledmodes) {
+          $('#' + i + 'modeenable')
+            .prop('checked', robopaint.settings.enabledmodes[i])
+            .change();
+        }
+        break;
       default:
         if ($input.attr('type') == 'checkbox') {
           $input.prop('checked', robopaint.settings[key]);
@@ -122,9 +135,6 @@ function saveSettings() {
  * Bind and callback functionality for any settings specific markup/controls
  */
 function bindSettingsControls() {
-  // Node Blocking load to get the settings HTML content in
-  $('#settings').html(fs.readFileSync('resources/main.settings.inc.html').toString());
-
   // Pull the list of available ports
   cncserver.getPorts(function(ports) {
     for (var portID in ports){
@@ -148,8 +158,11 @@ function bindSettingsControls() {
   }
   $('select#bottype').val(robopaint.currentBot.type);
 
+
+
   // Set robopaint global aspect ratio
   var b = botTypes[robopaint.currentBot.type].data;
+  robopaint.currentBot.data = b;
   var aspect = (b.maxArea.height - b.workArea.top) / (b.maxArea.width - b.workArea.left);
   robopaint.canvas = {
     width: 1152, // "Trusted" width to base transformations off of
@@ -194,10 +207,22 @@ function bindSettingsControls() {
   });
 
   // Catch all settings input changes
-  $('#settings input, #settings select').change(function(){
+  $('#settings input, #settings select').bind('change input', function(){
     var $input = $(this);
     var pushKey = [];
     var pushVal = '';
+
+    // Do this first as switch case can't use indexOf
+    // Update available modes
+    if (this.id.indexOf('modeenable') !== -1) {
+      var name = this.id.replace('modeenable', '');
+      robopaint.settings.enabledmodes[name] = $input.is(':checked');
+      $('#' + name + ', #bar-' + name).toggle(robopaint.settings.enabledmodes[name]);
+      responsiveResize();
+      if (!initializing) saveSettings();
+      return;
+    }
+
 
     switch (this.id) {
       case 'servoup':
@@ -215,6 +240,11 @@ function bindSettingsControls() {
         break;
 
       // TODO: Make the following pull from master pushkey list
+      // This would mean a total change in the way this switch is being used,
+      // and would remove all the code duplication below, of course it would
+      // complicate the simple settings variable structure. Considering that
+      // this currently works reasonably well has put it pretty low on the
+      // priority list.
       case 'invertx':
         pushKey = ['g', 'invertAxis:x'];
         pushVal = $input.is(':checked');
@@ -256,14 +286,14 @@ function bindSettingsControls() {
         toggleDisableSetting(
           '#showcolortext, #colorset',
           ($input.val() == 2 || $input.val() == 0),
-          'Paint required. Painting/Drawing Mode incompatible with this setting.'
+          robopaint.t('settings.output.penmode.warningPaint')
         );
 
         // No nothing!
         toggleDisableSetting(
           '#maxpaintdistance',
           $input.val() != 3,
-          'Water/Paint required. Painting/Drawing Mode incompatible with this setting.'
+          robopaint.t('settings.output.penmode.warningAll')
         );
 
         robopaint.settings[this.id] = $input.val();
@@ -274,18 +304,16 @@ function bindSettingsControls() {
           name: $('#bottype option:selected').text()
         });
         return;
+      case 'lang':
+        // robopaint.settings.lang set in updateLang() [main.js]
+        updateLang();
+        break;
       default: // Nothing special to set, just change the settings object value
         if ($input.attr('type') == 'checkbox') {
           robopaint.settings[this.id] = $input.is(':checked');
         } else {
           robopaint.settings[this.id] = $input.val();
         }
-    }
-
-    // Update available modes
-    if (this.id == 'manualpaintenable') {
-      $('#manual, #bar-manual').toggle(robopaint.settings[this.id]);
-      responsiveResize();
     }
 
     // Remoteprint mode click
@@ -295,6 +323,7 @@ function bindSettingsControls() {
 
     // Update paint sets when changes made that would effect them
     if (this.id == 'colorset' || this.id == 'showcolortext') {
+      updateColorSetSettings();
       if ($subwindow[0]) {
         if ($subwindow[0].contentWindow.updateColorSet) {
           $subwindow[0].contentWindow.updateColorSet();
@@ -351,16 +380,18 @@ function bindSettingsControls() {
   // Force the hand of settings to disable WCB specific options for bots without the right tools
   var tools = botTypes[robopaint.currentBot.type].data.tools;
   if (!tools.water0 && !tools.color0 && !tools.color7) { // Not a paint bot!
-    toggleDisableSetting('#penmode', false, 'Selected bot incompatible with painting tools.');
+    toggleDisableSetting('#penmode', false, robopaint.t('settings.advanced.bottype.warning'));
   }
 
   // Reset button
   $('#settings-reset').click(function(e) {
-    if (confirm('Reset all settings to factory defaults?')) {
+    if (confirm(robopaint.t('settings.buttons.reset.confirm'))) {
       delete localStorage[settingsStorageKey()];
+
       cncserver.loadGlobalConfig();
       cncserver.loadBotConfig();
       loadSettings();
+      loadDefaultLang();
     }
   });
 
@@ -390,7 +421,7 @@ function toggleDisableSetting(selector, toggle, message) {
  * Fade in/out settings modal window
  *
  * @param {Boolean} toggle
- *   True ro show window, false to hide.
+ *   True to show window, false to hide.
  */
 function setSettingsWindow(toggle) {
   if (toggle) {
@@ -409,14 +440,14 @@ function addSettingsRangeValues() {
     var $r = $(this);
     var $l = $('<label>').addClass('rangeval');
 
-    $r.change(function(){
+    $r.bind('change input', function(){
       var num = parseInt($r.val());
       var post = "";
       var wrap = ['(', ')'];
       var dosep = true;
 
       if (['servotime', 'latencyoffset'].indexOf(this.id) != -1) {
-        post = " ms"
+        post = " " + robopaint.t('common.time.ms');
       }
 
 
@@ -427,7 +458,8 @@ function addSettingsRangeValues() {
         case "maxpaintdistance":
           // Display as Centimeters (16.6667 mm per step!)
           num = Math.round((num / 166.7) * 10) / 10;
-          num = num+ ' cm / ' + (Math.round((num / 2.54) * 10) / 10) + ' in';
+          num = num+ ' ' + robopaint.t('common.metric.cm') + ' / ' +
+            (Math.round((num / 2.54) * 10) / 10) + ' ' + robopaint.t('common.imperial.in');
           dosep = false;
           break;
         case 'servoup':
@@ -442,15 +474,15 @@ function addSettingsRangeValues() {
           var msg = "";
 
           if (num < 25) {
-            msg = "Paintbrush on a Snail";
+            msg = robopaint.t('settings.output.move.speed0');
           } else if (num < 50) {
-            msg = "Painfully Slow";
+            msg = robopaint.t('settings.output.move.speed1');
           } else if (num < 75) {
-            msg = "Medium";
+            msg = robopaint.t('settings.output.move.speed2');
           } else if (num < 80) {
-            msg = "Fast (default)";
+            msg = robopaint.t('settings.output.move.speed3');
           } else {
-            msg = "Stupid Fast!";
+            msg = robopaint.t('settings.output.move.speed4');
           }
 
           dosep = false;
@@ -466,4 +498,63 @@ function addSettingsRangeValues() {
 
     $r.addClass('processed').after($l);
   })
+}
+
+/**
+ * Update/render currently selected colorset in settings window
+ */
+function updateColorSetSettings() {
+  if (!robopaint.statedata.colorsets) return; // Don't run too early
+
+  var set = robopaint.statedata.colorsets[robopaint.settings.colorset];
+  if (!set) return; // Don't run if the set is invalid
+
+  var $colors = $('#colorsets .colors');
+
+  // Add Sortable color names/colors
+  $colors.empty();
+  for (var i in set.colors) {
+    if (i == set.colors.length-1) break; // Ignore the last value
+    $('<li>')
+      .append(
+        $('<span>')
+          .addClass('color')
+          .css('background-color', set.colors[i].color['HEX'])
+          .text(' '),
+        $('<label>').text(set.colors[i].name)
+      ).appendTo($colors);
+  }
+
+  // Add metadata
+  var meta = 'type name description media'.split(' ');
+  for (var i in meta) {
+    $('#colorsets .' + meta[i]).text(set[meta[i]]);
+  }
+}
+
+/**
+ * Get default OS language and look if it is in the list of available languages,
+ * if not, set default to i18n's defualt languge (English).
+ * Called AFTER initial settings reload to
+ */
+function loadDefaultLang() {
+    // Iterate through list of files in language directory
+    fs.readdirSync("resources/i18n/").forEach(function(file) {
+      // Test if the file is a directory.
+      var stat = fs.statSync("resources/i18n/"+file);
+      if (stat && stat.isDirectory())
+
+        // Do a RegEx search for the filename in the default system language (this
+        // returns an index position or -1 if not found, so we use a conditional
+        // to change this to a boolean of whether or not it is in the string).
+        var isDefLang = navigator.language.search(file) !== -1;
+
+        // If the language we are iterating is the OS's default language.
+        if(isDefLang) {
+          // Set the selected language to be the default language
+          $("#lang").value = file;
+          console.info('Language Reset to:' + file);
+        };
+    });
+
 }
