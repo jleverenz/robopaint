@@ -78,10 +78,12 @@
       <div class="external hidden">
         <h4>Enter the CNC server address and port to connect to:</h4>
         <div>
-          <input type="text">
-          <input type="number">
+          <input id="external-domain" type="text">:
+          <input id="external-port" type="number">
+          <button id="external-go" class="normal">Go</button>
         </div>
-        <aside>Status: <em>Waiting...</em></aside>
+        <label for="external-status">Status:</label>
+        <status id="external-status">Waiting...</status>
       </div>
     </div>
   </div>

@@ -732,6 +732,15 @@ body.home div.options button.normal {
   font-size: 0.6em;
 }
 
+/* External server connection options */
+body.home div.external {
+  font-size: 0.6em;
+}
+
+body.home div.external status {
+  font-style: italic;
+}
+
 /* Settings Window Tabs */
 #settings h2 {
   margin: 0;
