@@ -1,0 +1,56 @@
+{
+  "_meta": {
+      "release": "0.9.2", 
+      "basetype": "colorset", 
+      "target": "es", 
+      "creator": "rogerfachini"
+  },
+  
+  "media": {
+    "watercolor": "Acuarela", 
+    "pen": "Pluma", 
+    "engraver": "Diamond grabador", 
+    "wax": "Electro-kistka"
+  }, 
+  "colors": {
+    "beige": "Beige",
+    "black": "Negro",
+    "blue": "Azul",
+    "bluegreen": "Azul Verde",
+    "blueviolet": "Azul Violeta",
+    "brown": "Marrón",
+    "canary": "Canario",
+    "copper": "Cobre",
+    "emerald": "Esmeralda",
+    "fuchsia": "Fucsia",
+    "gold": "Oro",
+    "green": "Verde",
+    "grey": "Gris",
+    "indigo": "Añil",
+    "lemon": "Limón",
+    "lilac": "Lila",
+    "lime": "Lima",
+    "maroon": "Granate",
+    "orange": "Naranja",
+    "orangered": "Rojo Anaranjado",
+    "pink": "Rosa",
+    "purple": "Púrpura",
+    "red": "Rojo",
+    "redviolet": "Rojo Violeta",
+    "ruby": "Rubí",
+    "salmon": "Salmón",
+    "sapphire": "Zafiro",
+    "silver": "Plata",
+    "skyblue": "Blue Sky",
+    "tangerine": "Mandarina",
+    "teal": "Teal",
+    "turquoise": "Turquesa",
+    "turquoiseblue": "Azul Turquesa",
+    "vermilion": "Bermellón",
+    "white": "Blanco",
+    "yellow": "Amarillo",
+    "yellowgreen": "Verde Amarillo",
+    "yelloworange": "Naranja Amarillo"
+    
+  }
+}

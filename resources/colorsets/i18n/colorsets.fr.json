@@ -1,0 +1,56 @@
+{
+  "_meta": {
+    "release": "0.9.2", 
+    "basetype": "colorset", 
+    "target": "fr", 
+    "creator": "rogerfachini et R10"
+  },
+  
+  "media": {
+    "watercolor": "Aquarelle", 
+    "pen": "Stylo", 
+    "engraver": "Diamant Graveur", 
+    "wax": "Electro-kistka"
+  }, 
+  "colors": {
+    "beige": "Beige",
+    "black": "Noir",
+    "blue": "Bleu",
+    "bluegreen": "Bleu Vert",
+    "blueviolet": "Bleu Violet",
+    "brown": "Marron",
+    "canary": "Canari",
+    "copper": "Cuivre",
+    "emerald": "Émeraude",
+    "fuchsia": "Fuchsia",
+    "gold": "Or",
+    "green": "Vert",
+    "grey": "Gris",
+    "indigo": "Indigo",
+    "lemon": "Citron",
+    "lilac": "Lilas",
+    "lime": "Citron Vert",
+    "maroon": "Bordeaux",
+    "orange": "Orange",
+    "orangered": "Orange Rouge",
+    "pink": "Rose",
+    "purple": "Violet",
+    "red": "Rouge",
+    "redviolet": "Rouge Violet",
+    "ruby": "Rubis",
+    "salmon": "Saumon",
+    "sapphire": "Saphir",
+    "silver": "Argent",
+    "skyblue": "Bleu Ciel",
+    "tangerine": "Clémentine",
+    "teal": "Sarcelle",
+    "turquoise": "Turquoise",
+    "turquoiseblue": "Bleu Turquoise",
+    "vermilion": "Vermillon",
+    "white": "Blanc",
+    "yellow": "Jaune",
+    "yellowgreen": "Jaune Vert",
+    "yelloworange": "Jaune Orange"
+  }
+  
+}

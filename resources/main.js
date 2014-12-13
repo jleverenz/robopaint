@@ -576,6 +576,8 @@ function getColorsets() {
   for(var i in sets) {
     var set = sets[i];
     var setDir = colorsetDir + set + '/';
+
+
     try {
       var fileSets = JSON.parse(fs.readFileSync(setDir + set + '.json'));
     } catch(e) {
@@ -583,41 +585,51 @@ function getColorsets() {
       continue;
     }
 
-    // Move through all colorsets in file
+     // Move through all colorsets in file
     for(var s in fileSets) {
       var c = fileSets[s];
+      var machineName = c.machineName;
 
       try {
         // Add pure white to the end of the color set for auto-color
-        c.colors.push({'White': '#FFFFFF'});
+        c.colors.push({'white': '#FFFFFF'});
 
         // Process Colors to avoid re-processing later
         var colorsOut = [];
         for (var i in c.colors){
-          var name = Object.keys(c.colors[i])[0];
+          var color = c.colors[i];
+          var name = Object.keys(color)[0];
           var h = c.colors[i][name];
           var r = robopaint.utils.colorStringToArray(h);
           colorsOut.push({
-            name: name,
+            name: robopaint.t("colorsets.colors." + name),
             color: {
               HEX: h,
               RGB: r,
               HSL: robopaint.utils.rgbToHSL(r),
               YUV: robopaint.utils.rgbToYUV(r)
             }
+
           });
         }
       } catch(e) {
-        // Silently fail on bad parse!
+        console.error("Parse error on colorset: " + s, e);
         continue;
       }
+      // Use the machine name and set name of the colorset to create translate
+      // strings.
+      var name  = "colorsets." + set + "." + machineName + ".name";
+      var maker = "colorsets." + set + "." + machineName + ".manufacturer";
+      var desc  = "colorsets." + set + "." + machineName + ".description";
+      var media = "colorsets.media." + c.media;
 
       robopaint.statedata.colorsets[c.styles.baseClass] = {
-        name: c.name,
-        type: c.type,
+        name: robopaint.t(name),
+        type: robopaint.t(maker),
         weight: parseInt(c.weight),
-        description: c.description,
-        media: c.media,
+        description: robopaint.t(desc),
+        media: robopaint.t(media),
+        enabled: robopaint.statedata.allowedMedia[c.media],
         baseClass: c.styles.baseClass,
         colors: colorsOut,
         stylesheet: $('<link>').attr({rel: 'stylesheet', href: setDir + c.styles.src}),
@@ -631,16 +643,30 @@ function getColorsets() {
     return (robopaint.statedata.colorsets[a].weight - robopaint.statedata.colorsets[b].weight)
   });
 
+  //  Clear the menu (prevents multiple copies appearing on language switch)
+  $('#colorset').empty();
+
   // Actually add the colorsets in the correct weighted order to the dropdown
   for(var i in order) {
     var c = robopaint.statedata.colorsets[order[i]];
-    $('#colorset').append(
-      $('<option>')
-        .attr('value', order[i])
-        .text(c.type + ' - ' + c.name)
-        .prop('selected', order[i] == robopaint.settings.colorset)
-    );
+    if (c.enabled) { // Only add enabled/allowed color/mediasets
+      $('#colorset').append(
+        $('<option>')
+          .attr('value', order[i])
+          .text(c.type + ' - ' + c.name)
+          .prop('selected', order[i] == robopaint.settings.colorset)
+      );
+    }
   }
+
+  // No options? Disable color/mediasets
+  if (!$('#colorset option').length) {
+    $('#colorsets').hide();
+  }
+
+  /*
+  // TODO: This feature to be able to add custom colorsets has been sitting unfinished for
+  // quite some time and seriously needs a bit of work. see evil-mad/robopaint#70
 
   // Menu separator
   $('#colorset').append($('<optgroup>').attr('label', ' ').addClass('sep'));
@@ -656,6 +682,7 @@ function getColorsets() {
       .text(robopaint.t('settings.output.colorsets.add'))
       .addClass('add')
   );
+  */
 
   // Initial run to populate settings window
   updateColorSetSettings();
@@ -794,105 +821,4 @@ function getCurrentBot() {
   return bot;
 }
 
-/**
- * Early called translate trigger for loading translations and static
- * strings.
- */
-function translatePage() {
-  // Shoehorn settings HTML into page first...
-  // Node Blocking load to get the settings HTML content in
-  $('#settings').html(fs.readFileSync('resources/main.settings.inc.html').toString());
-  var resources = {};
 
-  // Get all available language JSON files from folders, add to the dropdown
-  // list, and add to the rescources available.
-  var i = 0;
-  var i18nPath = 'resources/i18n/';
-  fs.readdirSync(i18nPath).forEach(function(file) {
-    // Get contents of the language file.
-    try {
-      var data = JSON.parse(fs.readFileSync(i18nPath + file , 'utf8'));
-
-      // Create new option in the pulldown language list, with the text being
-      // the language's name value is the two letter language code.
-      $("#lang").append(
-        $("<option>")
-          .text(data.settings.lang.name)
-          .attr('value', data['_meta'].target)
-      );
-
-
-      // Add the language to the resource list.
-      resources[data['_meta'].target] = { translation: data};
-      i += 1;
-    } catch(e) {
-      console.error('Bad language file:' + file, e);
-    }
-  });
-  console.debug("Found a total of " + i + " language files.");
-
-  // Loop over every element in the current document scope that has a 'data-i18n' attribute that's empty
-  $('[data-i18n]=""').each(function() {
-    // "this" in every $.each() function, is a reference to each selected DOM object from the query.
-    // Note we have to use $() on it to get a jQuery object for it. Do that only once and save it in a var
-    // to keep your code from having to instantiate it more than once.
-    var $node = $(this);
-    // Check if the text contains a dot (will prevent it from accidentally
-    // overwriitng existing data in i18n attribute) and if the existing
-    // i18n attribute is empty
-    if ($node.text().indexOf('.') > -1 && $node.attr('data-i18n') == "") {
-      $node.attr('data-i18n', $node.text());
-      // This leaves the text value of the node intact just in case it doesn't translate and someone is debugging,
-      // they'll be able to see the exact translation key that is a problem in the UI.
-    }
-  });
-
-  i18n.init({
-    resStore: resources,
-    ns: 'translation'
-  }, function(t) {
-    robopaint.t = t;
-    $('[data-i18n]').i18n();
-  });
-}
-
-/**
- * Reloads language file and updates any changes to it.
- * Called when the language is changed in the menu list.
- */
-
-function updateLang() {
-  // Get the index pointer from the dropdown menu.
-  robopaint.settings.lang = $('#lang').val();
-
-  // Abort the subroutine if the language has not changed (or on first load)
-  if (currentLang == robopaint.settings.lang) {
-      return;
-  }
-
-  currentLang = robopaint.settings.lang;
-
-  // Change the language on i18n, and reload the translation variable.
-  i18n.setLng(
-    robopaint.settings.lang,
-    function(t) {
-      robopaint.t = t;
-      $('[data-i18n]').i18n();
-
-      // Set visible version from manifest (with appended bot type if not WCB)
-      // This has to be done here because it's one of the few out of phase translations
-      var bt = robopaint.currentBot.type != "watercolorbot" ? ' - ' + robopaint.currentBot.name : '';
-      $('span.version').text('('+ robopaint.t('nav.toolbar.version') + gui.App.manifest.version + ')' + bt);
-    });
-
-  // Initalize/reset Tooltips
-  initToolTips();
-
-  // Report language switch to the console
-  console.info("Language Switched to: " + robopaint.settings.lang);
-
-  // Apply bolding to details text
-  $('aside').each(function(){
-    $(this).html($(this).text().replace(/\*\*(\S(.*?\S)?)\*\*/gm, '<b>$1</b>'));
-  });
-}

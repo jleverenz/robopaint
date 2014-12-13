@@ -2,7 +2,8 @@
   "_meta": {
     "creator": "R10 avec l’aide de Sofia",
     "target": "fr",
-    "release": "0.7.5"
+    "langname": "Français",
+    "release": "0.9.2"
   },
   "common": {
     "pause": "Pause",
@@ -78,8 +79,7 @@
   "settings": {
 
     "lang": {
-      "title": "Sélectionner la langue:",
-      "name": "Français"
+      "title": "Sélectionner la langue:"
     },
 
     "tabs": {

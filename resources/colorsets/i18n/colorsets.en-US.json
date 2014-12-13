@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "creator": "rogerfachini",
+    "target": "en-US",
+    "release": "0.9.2",
+    "basetype": "colorset"
+  },
+  
+  "media":{
+    "watercolor": "Watercolor",
+    "pen": "Pen",
+    "engraver": "Diamond Engraver",
+    "wax": "Electro-Kistka"
+  },
+  
+  "colors": {
+    "beige": "Beige",
+    "black": "Black",
+    "blue": "Blue",
+    "bluegreen": "Blue Green",
+    "blueviolet": "Blue Violet",
+    "brown": "Brown",
+    "canary": "Canary",
+    "copper": "Copper",
+    "emerald": "Emerald",
+    "fuchsia": "Fuchsia",
+    "gold": "Gold",
+    "green": "Green",
+    "grey": "Grey",
+    "indigo": "Indigo",
+    "lemon": "Lemon",
+    "lilac": "Lilac",
+    "lime": "Lime",
+    "maroon": "Maroon",
+    "orange": "Orange",
+    "orangered": "Orange Red",
+    "pink": "Pink",
+    "purple": "Purple",
+    "red": "Red",
+    "redviolet": "Red Violet",
+    "ruby": "Ruby",
+    "salmon": "Salmon",
+    "sapphire": "Sapphire",
+    "silver": "Silver",
+    "skyblue": "Sky Blue",
+    "tangerine": "Tangerine",
+    "teal": "Teal",
+    "turquoise": "Turquoise",
+    "turquoiseblue": "Turquoise Blue",
+    "vermilion": "Vermilion",
+    "white": "White",
+    "yellow": "Yellow",
+    "yellowgreen": "Yellow Green",
+    "yelloworange": "Yellow Orange"
+
+  }
+}
