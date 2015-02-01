@@ -241,6 +241,10 @@ $(function() {
 
       // Convert anything not a path into a path for proper tracing
       cncserver.paths.changeToPaths('svg#main g#cncserversvg');
+
+      // Render all paths in the context into polygons (stored in
+      // cncserver.paths.allFilledPathPolygons by the function)
+      cncserver.paths.renderAllPathPolygons('svg#main g#cncserversvg');
     }
 
     if (cncserver.canvas.loadSVGCallback) {

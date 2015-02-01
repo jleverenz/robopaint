@@ -4,13 +4,8 @@
 
 define(function(){return function($, robopaint, cncserver){
 cncserver.paths = {
-  // Find out what DOM object is directly below the point given
-  // Will NOT work if point is outside visible screen range!
+  allFilledPathPolygons: {}, // Placeholder for rendered polygons of filled paths
 
-  // TODO: maybe this can be replaced by polygonal collision detection? :P
-  // Wait, no, on second thought this is a terrible idea. We should just
-  // boolean difference all the paths into each other!
-  // https://github.com/Delapouite/JsClipper
   getPointPathCollide: function(point) {
 
     // Add 48 to each side for 96dpi 1/2in offset
@@ -385,9 +380,9 @@ cncserver.paths = {
     var pathPos = 0;
     var p = {};
     var max = $fill[0].getTotalLength();
-    runNextFill();
 
-    function runNextFill() {
+    var runFill = true;
+    while (runFill) {
       pathPos+= parseInt(options.fillprecision);
       p = $fill.getPoint(pathPos);
 
@@ -413,7 +408,8 @@ cncserver.paths = {
         // Only if we've passed previous checks should we run the expensive
         // getPointPathCollide function
         if (isVisible){
-          isVisible = cncserver.paths.getPointPathCollide(p) == $path[0]
+          //isVisible = cncserver.paths.getPointPathCollide(p) == $path[0];
+          isVisible = cncserver.paths.isPathAtPoint([p.x, p.y], $path[0].id);
         }
 
         if (isVisible){
@@ -433,8 +429,8 @@ cncserver.paths = {
             cncserver.state.process.waiting = true;
           }
         }
-        setTimeout(runNextFill, 0);
       } else { // Done
+        runFill = false;
         if (callback) callback();
       }
     }
@@ -502,9 +498,9 @@ cncserver.paths = {
     $fill.attr('transform', 'translate(' + (pathRect.x - fillOffsetPadding - leftOffset) +
       ',' + (pathRect.y - fillOffsetPadding + topOffset) + ') rotate(' + options.fillangle + ')');
 
-    runNextFill();
+    var runFill = true;
 
-    function runNextFill() {
+    while (runFill) {
       linePos+= options.fillprecision;
 
       var shortcut = false;
@@ -613,7 +609,8 @@ cncserver.paths = {
         // Only if we've passed previous checks should we run the expensive
         // getPointPathCollide function
         if (isVisible){
-          isVisible = cncserver.paths.getPointPathCollide(p) == $path[0]
+          //isVisible = cncserver.paths.getPointPathCollide(p) == $path[0];
+          isVisible = cncserver.paths.isPathAtPoint([p.x, p.y], $path[0].id);
         }
 
         if (isVisible){ // Path is visible at this position!
@@ -650,9 +647,9 @@ cncserver.paths = {
             lastPointChecked = {x:p.x, y:p.y};
           }
         }
-        setTimeout(runNextFill, 0);
       } else { // DONE!
         // Reset position of fill line (avoids odd prefill lines)
+        runFill = false;
         $fill.attr('transform', 'translate(0,0)');
         if (callback) callback();
       }
@@ -812,6 +809,7 @@ cncserver.paths = {
 
     // runFill common stuff for code reuse ==================================
     $('#sim').hide(); // Hide sim window
+    var start = new Date().getTime();
     console.info($path[0].id + ' ' + options.filltype + ' path fill run started...');
     cncserver.cmd.run('up'); // Start with brush up
     cncserver.state.process.waiting = true;
@@ -831,10 +829,182 @@ cncserver.paths = {
     // Common callback to handle more code reuse
     function runFillCallback() {
       cncserver.cmd.run('up');
-      console.info($path[0].id + ' ' + options.filltype + ' path fill run done!');
+      var elapsed = new Date().getTime() - start;
+      console.info($path[0].id + ' ' + options.filltype + ' path fill run done in ' + elapsed/1000 + 's');
       callback();
     }
 
+  },
+
+  /**
+   * Point -> polygon check function.
+   *
+   * @param {Array [x, y]} point
+   *   Point to check whether it's inside the polygon.
+   * @param {type} poly
+   *   The polygon array of points to check.
+   * @returns {Boolean}
+   *   True if the point is inside the polygon, false if it's not.
+   */
+  pointInsidePolygon: function(point, poly) {
+    // ray-casting algorithm based on
+    // http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html
+    var x = point[0], y = point[1];
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i][0], yi = poly[i][1];
+      var xj = poly[j][0], yj = poly[j][1];
+      var intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  },
+
+  /**
+   * Check if a given point along a given path should be visible considering
+   * all other paths and their overlapping z-order. This should be used for
+   * known good points like path stroking.
+   *
+   * @param {Array [x, y]} srcPoint
+   *   Point to check.
+   * @param {String} srcPathName
+   *   Name of path ID key (among all paths) to start from (and ignore).
+   * @returns {Boolean}
+   *   True if the point is visible, false if it should be occluded.
+   */
+  pointIsVisible: function(srcPoint, srcPathName) {
+    // Move through all paths AFTER the srcPathName...
+    var foundPath = false;
+    for (var name in cncserver.paths.allFilledPathPolygons) {
+      var path = cncserver.paths.allFilledPathPolygons[name];
+
+      // (Except the source path)
+      if (name !== srcPathName && foundPath) {
+        // Move through all polygons within the path
+        for (var i in path) {
+          if (cncserver.paths.pointInsidePolygon(srcPoint, path[i])) {
+            // Any point found inside of another polygon above the src must be
+            // in front of that point, and therefore invisible.
+            return false;
+          }
+        }
+      } else if (name === srcPathName) {
+        foundPath = true;
+      }
+    }
+
+    return true; // If we got this far, we must be in the clear!
+  },
+
+  /**
+   * Check if a given point is the expected path. Good for when a point is not
+   * known to reside within its source path.
+   *
+   * @param {Array [x, y]} srcPoint
+   *   Point to check.
+   * @param {String} srcPathName
+   *   Name of path key (among all paths) we expect the point to be in.
+   * @returns {Boolean}
+   *   True if the point is on the expected path, false if the path is nothing
+   *   or occluded by another path.
+   */
+  isPathAtPoint: function(srcPoint, srcPathName) {
+    // Move through all paths in reverse order, stopping at srcPathName.
+    var keys = Object.keys(cncserver.paths.allFilledPathPolygons);
+    for (var idIndex = keys.length-1; idIndex >= 0; idIndex--) {
+      var name = keys[idIndex];
+      var path = cncserver.paths.allFilledPathPolygons[name];
+
+      // Move through all polygons within the path
+      for (var polyIndex in path) {
+        if (cncserver.paths.pointInsidePolygon(srcPoint, path[polyIndex])) {
+          // Any point found inside of a polygon from front->back, must be the
+          // path on the very top.
+          return name === srcPathName;
+        }
+      }
+
+      // If we've gotten this far, there must be nothing here
+      if (name === srcPathName) {
+        return false;
+      }
+    }
+
+    return false; // If we got this far, there must be nothing here
+  },
+
+  /**
+   * Render and return a given path into a polygonal array of points.
+   *
+   * @param {type} $path
+   *   Shortcut initialized jQuery object of path.
+   * @param {float} resolution
+   *   The step value to move by when converting a path to a polygon, larger
+   *   values = coarser output, but less data.
+   * @returns {Array|getPathPolygons.polygon}
+   *   Array containing set of x/y arrays that defines a set of closed
+   *   polygons that reside within the path/subpaths.
+   */
+  getPathPolygons: function($path, resolution) {
+    var res = resolution ? resolution : 6;
+    var length = $path[0].getTotalLength();
+    var path = $path[0];
+
+
+    var lastPathSeg = -1; // Assume change on first subpath
+    var cPathSeg = 0;
+    var subPathCount = 0;
+    var polys = [];
+      polys[0] = [];
+
+    // Move through all points along the path, changing polys as needed
+    for (var distance = 0; distance <= length + res; distance = distance + res) {
+      var point = $path.getPoint(distance);
+
+      cPathSeg = path.getPathSegAtLength(distance); // Store the current seg ID
+      polys[subPathCount].push([parseInt(point.x), parseInt(point.y)]); // Save this point
+
+      // If our last segment jumped, check if it's a move to sub path
+      if (cPathSeg !== lastPathSeg) {
+        if (cPathSeg > lastPathSeg + 1) {
+          // Move through all segments from previous, to last
+          for(var checkSeg = cPathSeg-1; checkSeg > lastPathSeg; checkSeg--) {
+            var seg = path.pathSegList.getItem(checkSeg);
+            if (seg.pathSegTypeAsLetter.toLowerCase() === "m") {
+              subPathCount++;
+              polys[subPathCount] = [];
+              break;
+            }
+          }
+        }
+
+        lastPathSeg = cPathSeg;
+      }
+    }
+
+    return polys;
+  },
+
+
+  /**
+   * Get a list of all filled paths and their path/subpath polygons, in bottom
+   * to top order (this is important).
+   *
+   * @param {String} context
+   *   jQuery selector path for where to look for filled paths.
+   * @returns {Object|getPathPolygons.polygon}
+   *   Keyed object containing all polygons for every path.
+   */
+  renderAllPathPolygons: function(context, resolution) {
+    cncserver.paths.allFilledPathPolygons = {};
+    $('path', context).each(function(){
+      // Only store polygons of filled paths (otherwise they could be lines!)
+      if ($(this).css('fill') !== "none") {
+        var $path = $(this);
+        robopaint.utils.addShortcuts($path);
+        cncserver.paths.allFilledPathPolygons[this.id] = cncserver.paths.getPathPolygons($path, resolution);
+      }
+    });
   }
 };
 }});
