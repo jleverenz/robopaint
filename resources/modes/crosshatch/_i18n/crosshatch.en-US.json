@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "creator": "techninja",
+    "target": "en-US",
+    "release": "0.9.5"
+  },
+  "info":{
+    "description": "An experimental mode for vectorizing images with crosshatch",
+    "title": "Example Crosshatch vectorizing Mode",
+    "detail": "A mode to convert images into pictures.",
+    "word": "Crosshatch"
+  },
+  "buttons": {
+    "save": "Click to save this as the current drawing.",
+    "print": "Click to save and move to print mode."
+  },
+  "labels": {
+    "title": "Text Renderer",
+    "spacing": "Char spacing:",
+    "scale": "Scale:",
+    "hcent": "Horizontal Center:",
+    "vcent": "Vertical Center:",
+    "wrap": "Wrap Width:",
+    "text": "Hello World!"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "crosshatch",
+  "version": "0.8.0",
+  "type": "robopaint_mode",
+  "icon": "icon-font",
+  "weight": 2,
+  "i18n": "native",
+  "core": false,
+  "main": "crosshatch.html",
+  "author": "techninja",
+  "license": "MIT"
+}
