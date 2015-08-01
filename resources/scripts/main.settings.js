@@ -45,7 +45,9 @@ function loadSettings() {
     strokeprecision: 6,
     enabledmodes: {},
     remoteprint: 0,
-    gapconnect: 1
+    gapconnect: 1,
+    refillmode: 0,
+    refillaction: 0
   };
 
   // Allow machine specific overrides of initial default settings
@@ -58,7 +60,7 @@ function loadSettings() {
   if (localStorage[settingsStorageKey()]) {
     var s = getSettings();
     for (var key in robopaint.settings) {
-      if (typeof s[key] != 'undefined') {
+      if (typeof s[key] != 'undefined' && s[key] !== null) {
         robopaint.settings[key] = s[key];
       }
     }
@@ -300,6 +302,11 @@ function bindSettingsControls() {
 
 
     switch (this.id) {
+      case 'colorset':
+        // Disabled select properties can't be read with val(), so we use
+        // selectedIndex as an always working option.
+        robopaint.settings[this.id] = $input.find('option')[$input.prop('selectedIndex')].value;
+        break;
       case 'servoup':
       case 'servopaint':
       case 'servowash':

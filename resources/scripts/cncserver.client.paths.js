@@ -281,12 +281,22 @@ cncserver.paths = {
                 var seg = $path[0].pathSegList.getItem(checkSeg);
                 if (seg.pathSegTypeAsLetter.toLowerCase() === "m") {
                   subPathCount++;
-                  run([
-                    ['status', robopaint.t("libs.sub", {num: subPathCount})],
-                    'up',
-                    ['move', p],
-                    'down'
-                  ]);
+                  if (options.refillmode == 0) {
+                    run([
+                      ['status', robopaint.t("libs.sub", {num: subPathCount})],
+                      'up',
+                      ['move', p],
+                      'down'
+                    ]);
+                  } else if (options.refillmode == 1) {
+                    run([
+                      ['status', robopaint.t("libs.subrefill", {num: subPathCount})],
+                      'up',
+                      ['getpaintfull', p],
+                      ['move', p],
+                      'down'
+                    ]);
+                  }
                   break;
                 }
               }
@@ -483,6 +493,7 @@ cncserver.paths = {
     var topOffset = 48;
     var bottomLimit = 48;
     var fillOffsetPadding = options.fillprecision;
+    var fillCount = 0;
 
     // Offset calculation for non-flat angles
     // TODO: Support angles other than 45
@@ -713,7 +724,7 @@ cncserver.paths = {
           // Save the point!
           points.push([p.x, p.y]);
         }
-        setTimeout(runNextFill, 0);
+        window.parent.process.nextTick(runNextFill);
       } else { // Points are filled! Run the solver
         runTSPSolver();
       }

@@ -5,18 +5,19 @@
  *
  */
 
-global.$ = $;
-var gui = require('nw.gui');
+// Must use require syntax for including these libs because of node duality.
+window.$ = window.jQuery = require('./scripts/lib/jquery.js');
+window.$.i18n = window.i18n = require('./scripts/lib/i18next.js');
 
+// Include global main node process connector objects.
+var remote = require('remote');
+var mainWindow = remote.getCurrentWindow();
+var app = remote.require('app');
 
 // Setup and hide extraneous menu items for Mac Menu
 if (process.platform === "darwin") {
-  var mb = new gui.Menu({type: 'menubar'});
-  mb.createMacBuiltin('RoboPaint', {
-    hideEdit: true,
-    hideWindow: true
-  });
-  gui.Window.get().menu = mb;
+  // TODO: Implement Menus!
+  // https://github.com/atom/electron/blob/master/docs/api/menu.md
 }
 
 // BugSnag NODE Initialization
@@ -37,19 +38,20 @@ bugsnag.register("e3704afa045597498ab11c74f032f755",{
 // Global Keypress catch for debug
 $(document).keypress(function(e){
   if (e.keyCode == 4 && e.ctrlKey && e.shiftKey){
-    gui.Window.get().showDevTools();
+    mainWindow.openDevTools();
   }
 });
 
 
 var currentLang = "";
-var fs = require('fs');
+var fs = require('fs-plus');
 var cncserver = require('cncserver');
+var appPath = app.getAppPath() + '/';
 var barHeight = 40;
 var isModal = false;
 var initializing = false;
 var appMode = 'home';
-var $subwindow = {}; // Placeholder for subwindow iframe
+var $subwindow; // Placeholder for subwindow iframe
 var subWin = {}; // Placeholder for subwindow "window" object
 
 // Set the global scope object for any robopaint level details needed by other modes
@@ -60,6 +62,7 @@ var robopaint = {
   currentBot: getCurrentBot(),
   cncserver: cncserver, // Holds the reference to the real CNC server object with API wrappers
   $: $, // Top level jQuery Object for non-shared object bindings
+  appPath: appPath // Absolute App path to prefix relative dir locations
 };
 
 // Option buttons for connections
@@ -77,6 +80,16 @@ function startInitialization() {
  initializing = true;
 
  try {
+  // Add the secondary page iFrame to the page
+  $subwindow = $('<iframe>').attr({
+    height: $(window).height() - barHeight,
+    border: 0,
+    id: 'subwindow'
+  })
+    .css('top', $(window).height())
+    .hide()
+    .appendTo('body');
+
   // Bind and run inital resize first thing
   $(window).resize(responsiveResize);
   responsiveResize();
@@ -87,9 +100,20 @@ function startInitialization() {
   // Initalize Tooltips (after modes have been loaded)
   initToolTips();
 
-  // Bind settings controls & Load up initial settings!
-  // @see scripts/main.settings.js
+  // Bind settings controls
   bindSettingsControls();
+
+  // Must be run before we enumerate colorsets to ensure data is cached properly
+  // Also must run after settings controls are bound (as that's when we get tool
+  // data on current bot. TODO: Find a better home for that?
+  verifyColorsetAbilities();
+
+  // Load the colorset configuration data (needs to happen before settings are
+  // loaded and a colorset is selected.
+  getColorsets();
+
+  // Load up initial settings!
+  // @see scripts/main.settings.js
   loadSettings();
 
   // Set base CNC Server API wrapper access location
@@ -108,24 +132,12 @@ function startInitialization() {
   // Load the quickload list
   initQuickload();
 
-  // Add the secondary page iFrame to the page
-  $subwindow = $('<iframe>').attr({
-    height: $(window).height() - barHeight,
-    border: 0,
-    id: 'subwindow'
-  })
-    .css('top', $(window).height())
-    .hide()
-    .appendTo('body');
-
   // Prep the connection status overlay
   $stat = $('body.home h1');
   $options = $('.options', $stat);
 
   // Actually try to init the connection and handle the various callbacks
   startSerial();
-
-  getColorsets(); // Load the colorset configuration data
 
   bindMainControls(); // Bind all the controls for the main interface
  } catch(e) {
@@ -170,7 +182,7 @@ function bindMainControls() {
   });
 
 
-  gui.Window.get().on('close', onClose); // Catch close event
+  window.onbeforeunload = onClose; // Catch close event
 
   // Bind links for home screen central bubble nav links
   $('nav a').click(function(e) {
@@ -220,7 +232,7 @@ function bindMainControls() {
 
   // Bind help click (it's special)
   $('#bar-help').click(function(e){
-    gui.Shell.openExternal(this.href);
+    require('shell').openExternal(this.href);
     e.preventDefault();
   });
 }
@@ -276,7 +288,7 @@ function responsiveResize() {
   $s.find('.settings-content').height($s.height() - 80);
 
   // Set subwindow height
-  if ($subwindow.height) {
+  if (typeof $subwindow !== 'undefined') {
     $subwindow.height($(window).height() - barHeight);
   }
 
@@ -366,12 +378,12 @@ function startSerial(){
  * Runs on application close request to catch exits and alert user with dialog
  * if applicable depending on mode status
  */
-function onClose() {
-  var w = this;
-
+function onClose(e) {
   checkModeClose(function(){
-    w.close(true); // Until this is called
+    mainWindow.destroy(); // Until this is called
   }, true);
+  e.preventDefault();
+  return false;
 }
 
 
@@ -441,7 +453,7 @@ function initToolTips() {
 function initQuickload() {
   var $load = $('#bar-load');
   var $loadList = $('#loadlist');
-  var paths = ['resources/svgs'];
+  var paths = [appPath + 'resources/svgs'];
 
   // TODO: Support user directories off executable
   // This is imagined as secondary dropdown folder to list SVG files from a
@@ -469,7 +481,10 @@ function initQuickload() {
       var s = svgs[i];
       var name = s.split('.')[0].replace(/_/g, ' ');
       $('<li>').append(
-        $('<a>').text(name).data('file', paths[0] + '/' + s).attr('href', '#')
+        $('<a>').data('file', paths[0] + '/' + s).attr('href', '#').append(
+          $('<img>').attr('src', paths[0] + '/' + s),
+          $('<span>').text(name)
+        )
       ).appendTo($loadList);
     }
   }
@@ -514,7 +529,7 @@ function fadeInWindow() {
  * Fetches all colorsets available from the colorsets dir
  */
 function getColorsets() {
-  var colorsetDir = 'resources/colorsets/';
+  var colorsetDir = appPath + 'resources/colorsets/';
   var files = fs.readdirSync(colorsetDir);
   var sets = [];
 
@@ -604,14 +619,13 @@ function getColorsets() {
   // Actually add the colorsets in the correct weighted order to the dropdown
   for(var i in order) {
     var c = robopaint.statedata.colorsets[order[i]];
-    if (c.enabled) { // Only add enabled/allowed color/mediasets
-      $('#colorset').append(
-        $('<option>')
-          .attr('value', order[i])
-          .text(c.type + ' - ' + c.name)
-          .prop('selected', order[i] == robopaint.settings.colorset)
-      );
-    }
+    $('#colorset').append(
+      $('<option>')
+        .attr('value', order[i])
+        .text(c.type + ' - ' + c.name)
+        .prop('selected', order[i] == robopaint.settings.colorset)
+        .prop('disabled', !c.enabled) // Disable unavailable options
+    );
   }
 
   // No options? Disable color/mediasets
@@ -647,7 +661,7 @@ function getColorsets() {
  * Load all modes within the application
  */
 function loadAllModes(){
-  var modesDir = 'resources/modes/';
+  var modesDir = appPath + 'resources/modes/';
   var files = fs.readdirSync(modesDir);
   var modes = {};
   var modeDirs = [];
@@ -786,7 +800,8 @@ function getCurrentBot() {
   try {
     bot = JSON.parse(localStorage['currentBot']);
   } catch(e) {
-    // Parse error.. will stick with default
+    // Parse error.. will stick with default and write it.
+    localStorage['currentBot'] = JSON.stringify(bot);
   }
   return bot;
 }
